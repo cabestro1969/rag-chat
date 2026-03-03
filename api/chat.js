@@ -9,6 +9,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'No hay mensajes.' });
   }
 
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GROQ_API_KEY no configurada en el servidor.' });
+  }
+
   // Build system prompt with RAG context
   let systemPrompt = 'Eres un asistente útil y preciso. Responde siempre en español.';
 
@@ -24,51 +29,39 @@ Si la respuesta no está en los documentos, indícalo claramente.
 ${context}`;
   }
 
-  // Convert history to Gemini format
-  const geminiHistory = history.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }]
-  }));
-
-  // Separate last user message from history
-  const lastMessage = geminiHistory.pop();
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history
+  ];
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY no configurada en el servidor.' });
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [...geminiHistory, lastMessage],
-        generationConfig: {
-          maxOutputTokens: 1500,
-          temperature: 0.7,
-        }
-      }),
+        model: 'llama-3.3-70b-versatile',
+        messages,
+        max_tokens: 1500,
+        temperature: 0.7
+      })
     });
 
     const raw = await response.text();
-
     let data;
     try {
       data = JSON.parse(raw);
     } catch(e) {
-      return res.status(500).json({ error: 'Gemini devolvió respuesta inválida: ' + raw.slice(0, 200) });
+      return res.status(500).json({ error: 'Respuesta inválida del servidor: ' + raw.slice(0, 200) });
     }
 
     if (data.error) {
       return res.status(500).json({ error: data.error.message });
     }
 
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sin respuesta.';
+    const reply = data.choices?.[0]?.message?.content || 'Sin respuesta.';
     return res.status(200).json({ reply });
 
   } catch (err) {
