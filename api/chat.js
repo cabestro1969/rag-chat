@@ -24,19 +24,29 @@ Si la respuesta no está en los documentos, indícalo claramente.
 ${context}`;
   }
 
+  // Convert history to Gemini format
+  const geminiHistory = history.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  // Separate last user message from history
+  const lastMessage = geminiHistory.pop();
+
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const apiKey = process.env.GEMINI_API_KEY;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        system: systemPrompt,
-        messages: history,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [...geminiHistory, lastMessage],
+        generationConfig: {
+          maxOutputTokens: 1500,
+          temperature: 0.7,
+        }
       }),
     });
 
@@ -46,10 +56,11 @@ ${context}`;
       return res.status(500).json({ error: data.error.message });
     }
 
-    const reply = data.content?.[0]?.text || 'Sin respuesta.';
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sin respuesta.';
     return res.status(200).json({ reply });
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
+}
 }
