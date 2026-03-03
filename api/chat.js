@@ -35,6 +35,11 @@ ${context}`;
 
   try {
     const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY no configurada en el servidor.' });
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
@@ -50,7 +55,14 @@ ${context}`;
       }),
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch(e) {
+      return res.status(500).json({ error: 'Gemini devolvió respuesta inválida: ' + raw.slice(0, 200) });
+    }
 
     if (data.error) {
       return res.status(500).json({ error: data.error.message });
@@ -62,5 +74,4 @@ ${context}`;
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-}
 }
